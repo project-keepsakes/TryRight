@@ -2,5 +2,5 @@ anthropic
 fastapi
 httpx
 python-dotenv
-python-multipart
+python-multipart>=0.0.31
 pydantic

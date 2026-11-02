@@ -3,5 +3,5 @@ fastapi>=0.140
 uvicorn[standard]>=0.50
 httpx>=0.28
 python-dotenv>=1.2
-python-multipart>=0.0.30
+python-multipart>=0.0.31
 pydantic>=2.14
