@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from fastapi.responses import JSONResponse
+from provider_safety import PaidServicesDisabled, require_paid_services
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -39,6 +41,23 @@ STORE = json.loads(STORE_FILE.read_text()) if STORE_FILE.exists() else {"trials"
 AUDIO = {}  # (trial_id, language, text hash) -> mp3 bytes; replays don't re-bill ElevenLabs
 
 app = FastAPI(title="Triright voice")
+
+
+@app.middleware("http")
+async def paid_provider_gate(request, call_next):
+    path = request.scope.get("path", request.url.path)
+    root_path = request.scope.get("root_path", "").rstrip("/")
+    if root_path and path.startswith(root_path + "/"):
+        path = path[len(root_path):]
+    public_read = request.method in ("GET", "HEAD") and (
+        path == "/api/config" or path.startswith("/api/trials/")
+    )
+    if path.startswith("/api/") and not public_read:
+        try:
+            require_paid_services()
+        except PaidServicesDisabled:
+            return JSONResponse({"error": "Paid services are disabled"}, status_code=503)
+    return await call_next(request)
 # The trial-match app in ../app runs on port 8000 and can call this service directly.
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
                    allow_methods=["*"], allow_headers=["*"])
