@@ -14,6 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import anthropic
+from voice.provider_safety import PaidServicesDisabled, require_paid_services
 
 HERE = Path(__file__).parent
 MODEL = "claude-opus-5-5"
@@ -35,6 +36,7 @@ client = None
 
 
 def get_client():
+    require_paid_services()
     global client
     client = client or anthropic.Anthropic(**({"default_headers": {"anthropic-workspace-id": WORKSPACE}} if WORKSPACE else {}))
     return client
@@ -303,7 +305,29 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path not in ("/api/summarize", "/api/match", "/api/screen"):
+            return self.send_json({"error": "not found"}, 404)
+        try:
+            require_paid_services()
+        except PaidServicesDisabled:
+            return self.send_json({"error": "Paid services are disabled"}, 503)
+        lengths = self.headers.get_all("Content-Length", [])
+        if (len(lengths) != 1 or len(lengths[0]) > 8 or
+                not re.fullmatch(r"[0-9]+", lengths[0]) or self.headers.get("Transfer-Encoding")):
+            return self.send_json({"error": "Invalid request framing"}, 400)
+        length = int(lengths[0])
+        if length > 16384:
+            return self.send_json({"error": "Request body is too large"}, 413)
+        try:
+            self.connection.settimeout(5)
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                return self.send_json({"error": "Incomplete request body"}, 400)
+            body = json.loads(raw)
+            if not isinstance(body, dict):
+                return self.send_json({"error": "A JSON object is required"}, 400)
+        except (ValueError, UnicodeError, RecursionError, TimeoutError, OSError):
+            return self.send_json({"error": "Invalid request body"}, 400)
         try:
             if self.path == "/api/summarize":
                 return self.send_json(summarize(body["trial"]))
@@ -312,8 +336,10 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/screen":
                 p = next(p for p in PATIENTS if p["id"] == body["patientId"])
                 return self.send_json(screen(body["summary"], p))
-        except Exception as e:
-            return self.send_json({"error": str(e)}, 502)
+        except (KeyError, StopIteration, TypeError):
+            return self.send_json({"error": "Invalid request fields"}, 400)
+        except Exception:
+            return self.send_json({"error": "Trial screening is unavailable"}, 502)
         self.send_json({"error": "not found"}, 404)
 
 
@@ -324,6 +350,7 @@ if __name__ == "__main__":
     assert len(PATIENTS) == 24 and PATIENTS[0]["gad7"] == 8 and PATIENTS[3]["fields"].get("Meds"), PATIENTS[0]
     assert len(TRIALS) > 6 and hard_gate({"minAge": "18 Years", "maxAge": "65 Years", "sex": "ALL"},
                                           {"age": 71, "sex": "F"}), len(TRIALS)
-    threading.Thread(target=prewarm, daemon=True).start()
+    if os.environ.get("TRIRIGHT_ALLOW_PAID_SERVICES") == "true" and not ON_VERCEL:
+        threading.Thread(target=prewarm, daemon=True).start()
     print(f"{len(PATIENTS)} patients, {len(TRIALS)} trials loaded. Open http://localhost:8000", flush=True)
     ThreadingHTTPServer(("127.0.0.1", 8000), Handler).serve_forever()

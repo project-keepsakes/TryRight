@@ -3,6 +3,7 @@ import os
 from typing import Literal
 
 import anthropic
+from provider_safety import require_paid_services
 from pydantic import BaseModel, Field, ValidationError
 
 MODEL = "claude-opus-5-5"
@@ -10,6 +11,7 @@ _client = None
 
 
 def client():
+    require_paid_services()
     global _client
     if _client is None:
         # Reads ANTHROPIC_API_KEY from .env. A key that isn't scoped to a workspace also needs the workspace ID.

@@ -9,6 +9,11 @@ The clinician selects a synthetic patient in the "Triright · Trial Match" tab o
 
 ## Run
 
+Paid providers are disabled by default, even when API keys exist. Local
+reproduction requires an explicit `TRIRIGHT_ALLOW_PAID_SERVICES=true` opt-in;
+this can incur provider charges. Hosted Vercel execution always rejects paid
+operations. The archived repository does not manage or retire older deployments.
+
 1. Put the key in `app/.env` as `ANTHROPIC_API_KEY=...`. This file is in `.gitignore`; do not commit it.
 2. Start the server from the `app` folder:
 

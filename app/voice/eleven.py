@@ -5,6 +5,7 @@ Endpoints follow https://elevenlabs.io/docs/api-reference (checked 2026-10-08).
 import os
 
 import httpx
+from provider_safety import require_paid_services
 
 API = "https://api.elevenlabs.io"
 TTS_MODEL = "eleven_multilingual_v2"  # handles English and Spanish from the text itself
@@ -16,6 +17,7 @@ class ElevenError(Exception):
 
 
 def _key():
+    require_paid_services()
     key = os.environ.get("ELEVENLABS_API_KEY")
     if not key:
         raise ElevenError("ELEVENLABS_API_KEY is not set in voice/.env.")
@@ -61,6 +63,7 @@ def dub_transcript(project_id, language_id):
 
 
 def download(signed_url):
+    require_paid_services()
     r = httpx.get(signed_url, timeout=120, follow_redirects=True)  # signed URL: no API key
     if r.status_code >= 400:
         raise ElevenError(f"Downloading the dubbed audio failed ({r.status_code}).")
